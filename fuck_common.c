@@ -1,6 +1,6 @@
 #include "fuck_common.h"
 
-void putchar(char ch);
+void putchar(char c);
 
 void printf(const char *fmt, ...)
 {
@@ -74,10 +74,11 @@ end:
     va_end(vargs);
 }
 
+
 void *memcpy(void *dst, const void *src, size_t n)
 {
-    unit8_t *d = (unit8_t *)dst;             // 这行代码将dst指针转换为uint8_t *类型的指针，并赋值给变量d
-    const unit8_t *s = (const unit8_t *)src; // 这行代码将src指针转换为const uint8_t *类型的指针，并赋值给变量s
+    uint8_t *d = (uint8_t *)dst;             // 这行代码将dst指针转换为uint8_t *类型的指针，并赋值给变量d
+    const uint8_t *s = (const uint8_t *)src; // 这行代码将src指针转换为const uint8_t *类型的指针，并赋值给变量s
     while (n--)
     {
         // 将src指针指向的字节复制到dst指针指向的字节，并将两个指针都向后移动一字节

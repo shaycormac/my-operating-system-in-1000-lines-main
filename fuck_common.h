@@ -2,13 +2,13 @@
 
 
 typedef int bool;
-typedef unsigned char unit8_t;
-typedef unsigned short unit16_t;
-typedef unsigned int unit32_t;
-typedef unsigned long long unit64_t;
-typedef unit32_t size_t;
-typedef unit32_t paddr_t;
-typedef unit32_t vaddr_t;
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+typedef uint32_t size_t;
+typedef uint32_t paddr_t;
+typedef uint32_t vaddr_t;
 
 #define true 1;
 #define false 0;
@@ -26,6 +26,8 @@ typedef unit32_t vaddr_t;
 #define va_start __builtin_va_start
 #define va_end __builtin_va_end
 #define va_arg __builtin_va_arg
+
+#define PAGE_SIZE 4096
 
 void *memset(void *buf,char c, size_t n);
 

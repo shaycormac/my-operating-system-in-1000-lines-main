@@ -10,12 +10,14 @@ typedef uint32_t size_t;
 typedef uint32_t paddr_t;
 typedef uint32_t vaddr_t;
 
-#define true 1;
-#define false 0;
-#define NULL ((void *)0);
-#define align_up(value,algin)  __builtin_align_up(value,algin);//将 value 向上舍入到 align 的最近倍数。align 必须是 2 的幂。
-#define is_aligned(value,align) __builtin_is_aligned(value,align);// 检查 value 是否是 align 的倍数。align 必须是 2 的幂。
-#define offsetof(type,memeber)  __builtin_offsetof(type,member);
+#define true 1
+#define false 0
+#define NULL ((void *)0)
+// 将 value 向上舍入到 align 的最近倍数。align 必须是 2 的幂。
+#define align_up(value,algin)  __builtin_align_up(value,algin)
+// 检查 value 是否是 align 的倍数。align 必须是 2 的幂。
+#define is_aligned(value,align) __builtin_is_aligned(value,align)
+#define offsetof(type,memeber)  __builtin_offsetof(type,member)
 
 
 // 我们只是将这些定义为带有 __builtin_ 前缀的版本的别名。

@@ -7,6 +7,29 @@ struct sbiret {
     long value;
 };
 
+/**
+ * 内核栈包含保存的 CPU 寄存器、返回地址（从何处调用）和局部变量。
+ * 通过为每个进程准备一个内核栈，我们可以通过保存和恢复 CPU 寄存器并切换栈指针来实现上下文切换。
+ */
+struct process{
+    int pid;// 进程 ID
+    int state;// 进程状态: PROC_UNUSED 或 PROC_RUNNABLE
+    vaddr_t sp;// 栈指针
+    uint32_t *page_table;
+    uint8_t stack[8192];// 内核栈
+};
+
+// 构建页表
+// 让我们在 Sv32 中构建页表。首先，我们定义一些宏。SATP_SV32 是 satp 寄存器中表示“在 Sv32 模式下启用分页”的单个位，
+//而 PAGE_* 是要在页表项中设置的标志。
+#define SATP_SV32 (1u << 31)
+#define PAGE_V    (1 << 0)   // "Valid" 位（表项已启用）
+#define PAGE_R    (1 << 1)   // 可读
+#define PAGE_W    (1 << 2)   // 可写
+#define PAGE_X    (1 << 3)   // 可执行
+#define PAGE_U    (1 << 4)   // 用户（用户模式可访问）
+
+
 // 定义为宏，这样做的原因是为了正确显示源文件名（__FILE__）和行号（__LINE__）。
 // 如果我们将其定义为函数，__FILE__ 和 __LINE__ 将显示 PANIC 被定义的文件名和行号，而不是它被调用的位置。
 #define PANIC(fmt, ...)                                                        \

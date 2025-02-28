@@ -20,12 +20,23 @@ extern char __kernel_base[];
 // 用户模式,应用程序镜像的基础虚拟地址。这需要与 `user.ld` 中定义的起始地址匹配
 #define USER_BASE 0x1000000
 // 定义符号以使用嵌入的 fuck_shell.bin.o 原始二进制文件
-extern char _binary_fuck_shell_bin_start[],_binary_fuck_shell_bin_size[];
+extern char _binary_fuck_shell_bin_start[], _binary_fuck_shell_bin_size[];
 
-void user_entry(void){
-    PANIC("not yet implemented");
+// 用户入口函数，用于从内核模式切换到用户模式
+__attribute__((naked)) void user_entry(void)
+{
+    // PANIC("not yet implemented");
+
+    // 使用内联汇编来执行一些关键的操作
+    __asm__ __volatile__(
+        "csrw sepc, %[sepc]        \n" // 设置下一条指令的地址，即用户程序的起始地址
+        "csrw sstatus, %[sstatus]  \n" // 更新sstatus寄存器，以允许中断在用户模式下被接收
+        "sret                      \n" // 从异常处理程序返回，实际上是从内核模式切换到用户模式
+        :
+        : [sepc] "r"(USER_BASE),      // 将USER_BASE地址加载到sepc寄存器
+          [sstatus] "r"(SSTATUS_SPIE) // 将SSTATUS_SPIE值加载到sstatus寄存器，以设置中断使能
+    );
 }
-
 
 struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
                        long arg5, long fid, long eid)
@@ -52,6 +63,23 @@ struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
 void putchar(char c)
 {
     sbi_call(c, 0, 0, 0, 0, 0, 0, 1 /* Console Putchar */);
+}
+
+/**
+ * 从控制台获取一个字符
+ * 
+ * 该函数通过系统调用接口（SBI）与底层操作系统交互，以获取用户通过键盘输入的字符
+ * 它不接受任何参数，并返回一个长整型值，代表获取到的字符
+ * 
+ * @return long 返回用户输入的字符，以长整型表示如果发生错误，返回值可能是负数
+ * 
+ * 注意：严格来说，SBI 不是从键盘读取字符，而是从串口读取。它之所以能工作，是因为键盘（或 QEMU 的标准输入）连接到串口。
+ */
+long getchar(void){
+    // 调用SBI接口，参数为0表示控制台获取字符操作，其他参数为0表示没有额外的参数传递
+    // 返回值包含在sbiret结构体中，其中的error字段表示操作的结果或错误代码
+    struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2 /* Console Getchar */);
+    return ret.error;
 }
 
 // 上下文切换
@@ -152,12 +180,12 @@ struct process procs[PROCS_MAX]; // 所有进程控制结构
 /**
  * create_process 函数中映射内核页面。内核页面从 __kernel_base 跨越到 __free_ram_end。
  * 这种方法确保内核始终可以访问静态分配的区域（如 .text）和由 alloc_pages 管理的动态分配区域：
- * 
- * 
+ *
+ *
  * 修改了 create_process 以接受执行镜像的指针(image)和镜像大小(image_size)作为参数。
  * 它按指定大小逐页复制执行镜像并将其映射到进程的页表中。同时，它将第一次上下文切换的跳转目标设置为 user_entry
  */
-struct process *create_process(const void *image,size_t image_size)
+struct process *create_process(const void *image, size_t image_size)
 {
     struct process *proc = NULL;
     int i;
@@ -178,18 +206,18 @@ struct process *create_process(const void *image,size_t image_size)
     // 设置被调用者保存的寄存器。这些寄存器值将在 switch_context
     // 中的第一次上下文切换时被恢复。
     uint32_t *sp = (uint32_t *)&proc->stack[sizeof(proc->stack)];
-    *--sp = 0;            // s11
-    *--sp = 0;            // s10
-    *--sp = 0;            // s9
-    *--sp = 0;            // s8
-    *--sp = 0;            // s7
-    *--sp = 0;            // s6
-    *--sp = 0;            // s5
-    *--sp = 0;            // s4
-    *--sp = 0;            // s3
-    *--sp = 0;            // s2
-    *--sp = 0;            // s1
-    *--sp = 0;            // s0
+    *--sp = 0;                    // s11
+    *--sp = 0;                    // s10
+    *--sp = 0;                    // s9
+    *--sp = 0;                    // s8
+    *--sp = 0;                    // s7
+    *--sp = 0;                    // s6
+    *--sp = 0;                    // s5
+    *--sp = 0;                    // s4
+    *--sp = 0;                    // s3
+    *--sp = 0;                    // s2
+    *--sp = 0;                    // s1
+    *--sp = 0;                    // s0
     *--sp = (uint32_t)user_entry; // ra
 
     // 创建进程的内核分配,映射内核页面
@@ -201,14 +229,15 @@ struct process *create_process(const void *image,size_t image_size)
         map_page(page_table, paddr, paddr, PAGE_R | PAGE_W | PAGE_X);
     }
     // 映射用户页
-    for(uint32_t off=0;off < image_size;off += PAGE_SIZE){
+    for (uint32_t off = 0; off < image_size; off += PAGE_SIZE)
+    {
         paddr_t page = alloc_pages(1);
         // 处理要复制的数据小于页面大小的情况
-        size_t remaining = image_size -off;
-        size_t copy_size = PAGE_SIZE <=remaining?PAGE_SIZE:remaining;
+        size_t remaining = image_size - off;
+        size_t copy_size = PAGE_SIZE <= remaining ? PAGE_SIZE : remaining;
         // 填充并映射页面
-        memcpy((void*)page,image+off,copy_size);
-        map_page(page_table,USER_BASE+off,page,PAGE_U | PAGE_R | PAGE_W | PAGE_X);
+        memcpy((void *)page, image + off, copy_size);
+        map_page(page_table, USER_BASE + off, page, PAGE_U | PAGE_R | PAGE_W | PAGE_X);
     }
 
     // 初始化字段
@@ -388,15 +417,79 @@ kernel_entry(void)
         "sret\n");
 }
 
+/**
+ * 处理系统调用
+ * 
+ * 此函数根据trap_frame中的系统调用号处理相应的系统调用
+ * 它检查系统调用号，并根据调用的类型执行相应的操作
+ * 
+ * @param f 指向trap_frame结构体的指针，包含了系统调用的参数和调用号
+ */
+void handle_syscall(struct trap_frame *f)
+{
+    // 根据系统调用号选择相应的操作
+    switch (f->a3)
+    {
+    case SYS_PUTCHAR:
+        // 执行putchar系统调用，输出字符
+        putchar(f->a0);
+        break;
+    case SYS_GETCHAR:
+        while (1)
+        {
+            long ch = getchar(); // getchar 系统调用的实现重复调用 SBI 直到输入一个字符。但是，简单地重复这个操作会阻止其他进程运行，所以我们调用 yield 系统调用来将 CPU 让给其他进程。
+            if (ch >= 0)
+            {
+                f->a0 = ch;
+                break;
+            }
+            yield();
+        }
+        break;
+        case SYS_EXIT:
+        printf("process %d exited\n",current_proc->pid);// 为了简单起见，我们只是将进程标记为已退出（PROC_EXITED）。
+        // 如果你想构建一个实用的操作系统，需要释放进程持有的资源，比如页表和分配的内存区域。
+        current_proc->state = PROC_EXITED;
+        yield();
+        PANIC("unreachable code");
+        break;
+    default:
+        // 遇到未知的系统调用号时触发PANIC
+        PANIC("unexpected syscall a3=%x\n", f->a3);
+    }
+}
 
-
+/**
+ * 处理中断陷阱
+ * 当发生中断或异常时，硬件会自动跳转到这里的处理程序
+ *
+ * @param f 指向中断框架结构的指针，包含中断发生时的寄存器状态
+ */
 void handle_trap(struct trap_frame *f)
 {
+    // 读取引起中断的原因
     uint32_t scause = READ_CSR(scause);
+    // 读取中断相关的值，例如故障地址
     uint32_t stval = READ_CSR(stval);
+    // 读取用户程序中断时的程序计数器值
     uint32_t user_pc = READ_CSR(sepc);
 
-    PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
+    // 检查中断原因是否为系统调用
+    if (scause == SCAUSE_ECALL)
+    {
+        // 调用系统调用处理函数
+        handle_syscall(f);
+        // 系统调用后，程序计数器增加4，跳过引起中断的指令
+        user_pc += 4;
+    }
+    else
+    {
+        // 对于非系统调用的中断，打印错误信息并触发恐慌模式
+        PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
+    }
+
+    // 更新程序计数器，以便从中断处理程序返回后继续执行
+    WRITE_CSR(sepc, user_pc);
 }
 
 void kernel_main(void)
@@ -431,28 +524,28 @@ void kernel_main(void)
     // PANIC("test switch_context end! below is unreachable");
 
     // 测试进程调度
-   // memset(__bss, 0, (size_t)__bss_end - (size_t)__bss);
-   // printf("\n\n");
-   // WRITE_CSR(stvec, (uint32_t)kernel_entry);
+    // memset(__bss, 0, (size_t)__bss_end - (size_t)__bss);
+    // printf("\n\n");
+    // WRITE_CSR(stvec, (uint32_t)kernel_entry);
 
-   // idle_proc = create_process(0);
-   // idle_proc->pid = -1; // idle
-   // current_proc = idle_proc;
+    // idle_proc = create_process(0);
+    // idle_proc->pid = -1; // idle
+    // current_proc = idle_proc;
     // 创建两个进程
-   // proc_a = create_process((uint32_t)proc_a_entry);
-   // proc_b = create_process((uint32_t)proc_b_entry);
-   // yield();
-   // PANIC("switched to idle process, unreachable!!");
+    // proc_a = create_process((uint32_t)proc_a_entry);
+    // proc_b = create_process((uint32_t)proc_b_entry);
+    // yield();
+    // PANIC("switched to idle process, unreachable!!");
 
     // 测试用户模式
-    memset(__bss,0,(size_t)__bss_end -(size_t) __bss);
+    memset(__bss, 0, (size_t)__bss_end - (size_t)__bss);
     printf("\n\n");
-    WRITE_CSR(stvec,(uint32_t)kernel_entry);
-    idle_proc = create_process(NULL,0);
-    idle_proc->pid = -1;
+    WRITE_CSR(stvec, (uint32_t)kernel_entry);
+    idle_proc = create_process(NULL, 0);
+    idle_proc->pid = 0;
     current_proc = idle_proc;
     // 开启用户进程
-    create_process(_binary_fuck_shell_bin_start,(size_t)_binary_fuck_shell_bin_size);
+    create_process(_binary_fuck_shell_bin_start, (size_t)_binary_fuck_shell_bin_size);
     yield();
     PANIC("switched to idle process, unreachable!!");
 

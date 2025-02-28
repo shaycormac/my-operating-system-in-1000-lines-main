@@ -29,6 +29,11 @@ struct process{
 #define PAGE_X    (1 << 3)   // 可执行
 #define PAGE_U    (1 << 4)   // 用户（用户模式可访问）
 
+#define SSTATUS_SPIE (1 << 5)
+
+#define SCAUSE_ECALL 8 // 调用系统调用
+
+#define PROC_EXITED 2
 
 // 定义为宏，这样做的原因是为了正确显示源文件名（__FILE__）和行号（__LINE__）。
 // 如果我们将其定义为函数，__FILE__ 和 __LINE__ 将显示 PANIC 被定义的文件名和行号，而不是它被调用的位置。

@@ -35,6 +35,98 @@ struct process{
 
 #define PROC_EXITED 2
 
+// 定义与virtio的相关
+#define SECTOR_SIZE 512
+#define VIRTQ_ENTRY_NUM 16
+#define VIRTIO_DEVICE_BLK 2
+#define VIRTIO_BLK_PADDR 0x10001000
+#define VIRTIO_REG_MAGIC 0x00
+#define VIRTIO_REG_VERSION       0x04
+#define VIRTIO_REG_DEVICE_ID     0x08
+#define VIRTIO_REG_QUEUE_SEL     0x30
+#define VIRTIO_REG_QUEUE_NUM_MAX 0x34
+#define VIRTIO_REG_QUEUE_NUM     0x38
+#define VIRTIO_REG_QUEUE_ALIGN   0x3c
+#define VIRTIO_REG_QUEUE_PFN     0x40
+#define VIRTIO_REG_QUEUE_READY   0x44
+#define VIRTIO_REG_QUEUE_NOTIFY  0x50
+#define VIRTIO_REG_DEVICE_STATUS 0x70
+#define VIRTIO_REG_DEVICE_CONFIG 0x100
+#define VIRTIO_STATUS_ACK       1
+#define VIRTIO_STATUS_DRIVER    2
+#define VIRTIO_STATUS_DRIVER_OK 4
+#define VIRTIO_STATUS_FEAT_OK   8
+#define VIRTQ_DESC_F_NEXT          1
+#define VIRTQ_DESC_F_WRITE         2
+#define VIRTQ_AVAIL_F_NO_INTERRUPT 1
+#define VIRTIO_BLK_T_IN  0
+#define VIRTIO_BLK_T_OUT 1
+
+// Virtqueque Descriptor 结构体
+struct virtq_desc {
+  uint64_t addr;
+  uint32_t len;
+  uint16_t flags;
+  uint16_t next;
+} __attribute__((packed));
+
+// Virtqueue Available Ring 结构体
+struct virtq_avail {
+  uint16_t flags;
+  uint16_t idx;
+  uint16_t ring[VIRTQ_ENTRY_NUM];
+} __attribute__((packed));
+
+// Virtqueue Used Ring 条目
+struct virtq_used_elem{
+  uint32_t id;
+  uint32_t len;
+} __attribute__((packed));
+
+// Virtqueue Used Ring 结构体
+struct virtq_used{
+  uint16_t flags;
+  uint16_t index;
+  struct virtq_used_elem ring[VIRTQ_ENTRY_NUM];
+} __attribute__((packed));
+
+
+// Virtqueue 结构体
+/**
+ * 结构体 virtio_queque 描述了一个 Virtio 队列，用于在主机和客户机之间高效传输数据。
+ * 该结构体包含描述符环、可用环和已用环，分别用于描述数据块、提供数据块和确认数据块的接收。
+ */
+struct virtio_queque{
+  // descs 数组存储了描述符项，每个描述符项描述了一个数据块的位置和大小。
+  struct virtq_desc descs[VIRTQ_ENTRY_NUM];
+
+  // avail 结构体是可用环，包含了发送方放置可用描述符索引的地方。
+  struct virtq_avail avail;
+
+  // used 结构体是已用环，接收方在此标记已接收的描述符。PAGE_SIZE 对齐确保了性能优化。
+  struct virtq_used used __attribute__((aligned(PAGE_SIZE)));
+
+  // queue_index 表示当前队列的索引，Virtio 设备可以有多个队列。
+  int queue_index;
+
+  // used_index 指向当前已用环的索引，volatile 关键字确保了多线程或多处理器环境下的内存访问一致性。
+  volatile uint16_t *used_index;
+
+  // last_used_index 记录了上一个处理的已用描述符索引，用于检测是否有新的数据包被接收。
+  uint16_t  last_used_index;
+} __attribute__((packed)); // packed 属性确保了结构体在内存中的紧凑布局，避免因对齐造成的空间浪费。
+
+
+// Virtio-blk 请求
+struct virtio_blk_req{
+  uint32_t type;
+  uint32_t reserved;
+  uint32_t sector;
+  uint8_t data[512];
+  uint8_t status;
+} __attribute__((packed));
+
+
 // 定义为宏，这样做的原因是为了正确显示源文件名（__FILE__）和行号（__LINE__）。
 // 如果我们将其定义为函数，__FILE__ 和 __LINE__ 将显示 PANIC 被定义的文件名和行号，而不是它被调用的位置。
 #define PANIC(fmt, ...)                                                        \

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xue
 
-# QEMU 鏂囦欢璺緞
+# QEMU 模拟器
 QEMU=qemu-system-riscv32
 
 # clang 路径和编译器标志
@@ -18,6 +18,13 @@ $OBJCOPY -Ibinary -Oelf32-littleriscv fuck_shell.bin fuck_shell.bin.o
 $CC $CFLAGS -Wl,-Tfuck_kernel.ld -Wl,-Map=fuck_kernel.map -B/usr/riscv64-linux-gnu/bin -o fuck_kernel.elf \
     fuck_kernel.c fuck_common.c fuck_shell.bin.o
 
+#新添加的选项解释如下：
+
+# -drive id=drive0：定义一个名为 drive0 的磁盘，使用 lorem.txt 作为磁盘镜像。磁盘镜像格式为 raw(将文件内容按原样作为磁盘数据处理)。
+# -device virtio-blk-device：添加一个带有 drive0 磁盘的 virtio-blk 设备。bus=virtio-mmio-bus.0 将设备映射到 virtio-mmio 总线(通过内存映射 I/O 的 virtio)。
 # 启动 QEMU
 $QEMU -machine virt -bios default -nographic -serial mon:stdio --no-reboot \
+    -d unimp,guest_errors,int,cpu_reset -D qemu.log \
+    -drive id=drive0,file=lorem.txt,format=raw,if=none \
+    -device virtio-blk-device,drive=drive0,bus=virtio-mmio-bus.0 \
     -kernel fuck_kernel.elf

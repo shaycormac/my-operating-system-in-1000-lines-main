@@ -240,6 +240,9 @@ struct process *create_process(const void *image, size_t image_size)
         map_page(page_table, USER_BASE + off, page, PAGE_U | PAGE_R | PAGE_W | PAGE_X);
     }
 
+    //插入 virtio 不知道对不对哎
+    map_page(page_table,VIRTIO_BLK_PADDR,VIRTIO_BLK_PADDR,PAGE_R | PAGE_W);
+
     // 初始化字段
     proc->pid = i + 1;
     proc->state = PROC_RUNNABLE;
@@ -583,3 +586,72 @@ boot(void)
         :
         : [stack_top] "r"(__stack_top));
 }
+
+// 访问 MMIO 寄存器与访问普通内存不同。你应该使用 volatile 关键字来防止编译器优化掉读/写操作。在 MMIO 中，内存访问可能会触发副作用(例如，向设备发送命令)。
+uint32_t virtio_reg_read32(unsigned offset){
+  return *((volatile uint32_t *)(VIRTIO_BLK_PADDR + offset));
+}
+
+uint64_t virtio_reg_read64(unsigned offset){
+  return *((volatile uint64_t *)(VIRTIO_BLK_PADDR + offset));
+}
+
+void virtio_reg_write32(unsigned offset, uint32_t value){
+  *((volatile uint32_t *)(VIRTIO_BLK_PADDR + offset)) =value;
+}
+
+
+void virtio_reg_fetch_and_or32(unsigned offset,uint32_t value){
+  virtio_reg_write32(offset,virtio_reg_read32(offset)|value);
+}
+
+
+// I/O 学习
+struct virtio_virtq *blk_request_vq;
+struct virtio_blk_req *blk_req;
+paddr_t blk_req_paddr;
+unsigned blk_capacity;
+
+/c++
+/**
+ * 初始化virtio块设备
+ *
+ * 此函数通过对virtio设备寄存器的读写来配置和初始化块设备它首先验证设备的魔数、版本和设备ID，
+ * 确保设备是有效的virtio块设备然后，它通过设备状态寄存器与设备进行交互，最后初始化块请求虚拟队列，
+ * 并获取块设备的容量信息
+ */
+void virtio_blk_init(void){
+    // 检查virtio设备的魔数，确保设备正确连接
+    if(virtio_reg_read32(VIRTIO_REG_MAGIC) != 0x74726976){
+        PANIC("virtio: magic number is not correct");
+    }
+
+    // 检查virtio设备的版本，确保版本兼容
+    if (virtio_reg_read32(VIRTIO_REG_VERSION) != 1)
+        PANIC("virtio: invalid version");
+
+    // 检查设备ID，确保是块设备
+    if (virtio_reg_read32(VIRTIO_REG_DEVICE_ID) != VIRTIO_DEVICE_BLK)
+        PANIC("virtio: invalid device id");
+
+    // 初始化设备状态寄存器
+    virtio_reg_write32(VIRTIO_REG_DEVICE_STATUS,0);
+    // 向设备状态寄存器写入ACK状态，表示设备已被认可
+    virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS,VIRTIO_STATUS_ACK);
+    // 向设备状态寄存器写入DRIVER状态，表示驱动程序已就绪
+    virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS,VIRTIO_STATUS_DRIVER);
+    // 向设备状态寄存器写入FEAT_OK状态，表示设备特性已被确认
+    virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS,VIRTIO_STATUS_FEAT_OK);
+    // 初始化块请求虚拟队列
+    blk_request_vq = virtq_init(0);
+    // 向设备状态寄存器写入DRIVER_OK状态，表示驱动程序已准备就绪
+    virtio_reg_write32(VIRTIO_REG_DEVICE_STATUS,VIRTIO_STATUS_DRIVER_OK);
+    // 计算并获取块设备的容量
+    blk_capacity = virtio_reg_read64(VIRTIO_REG_DEVICE_CONFIG+0)*SECTOR_SIZE;
+    // 打印块设备的容量信息
+    printf("virtio-blk:capacity is %d byte\n",blk_capacity);
+    // 分配物理页面用于块请求，并将其转换为适当的对齐
+    blk_req_paddr = alloc_pages(align_up(sizeof(*blk_req),PAGE_SIZE)/PAGE_SIZE);
+    blk_req = (struct virtio_blk_req *)blk_req_paddr;
+}
+
